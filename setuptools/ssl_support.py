@@ -19,6 +19,7 @@ __all__ = [
 ]
 
 cert_paths = """
+/@unixroot/etc/pki/tls/certs/ca-bundle.crt
 /etc/pki/tls/certs/ca-bundle.crt
 /etc/ssl/certs/ca-certificates.crt
 /usr/share/ssl/certs/ca-bundle.crt
