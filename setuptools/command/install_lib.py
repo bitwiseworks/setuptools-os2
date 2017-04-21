@@ -87,7 +87,8 @@ class install_lib(orig.install_lib):
             self, infile, outfile,
             preserve_mode=1, preserve_times=1, preserve_symlinks=0, level=1
     ):
-        assert preserve_mode and preserve_times and not preserve_symlinks
+        if os.name != 'os2': # somehow the below assertion doesn't work
+            assert preserve_mode and preserve_times and not preserve_symlinks
         exclude = self.get_exclusions()
 
         if not exclude:
