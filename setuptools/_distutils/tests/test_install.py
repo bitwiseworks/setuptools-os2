@@ -90,7 +90,7 @@ class TestInstall(
 
         monkeypatch.setattr(os.path, 'expanduser', _expanduser)
 
-        for key in ('nt_user', 'posix_user'):
+        for key in ('nt_user', 'posix_user', 'os2_user'):
             assert key in INSTALL_SCHEMES
 
         dist = Distribution({'name': 'xx'})

@@ -165,6 +165,9 @@ class Compiler:
         # named library files) to include on any link
         self.objects: list[str] = []
 
+        if sys.platform.startswith('os2'):
+            self.version = None
+
         for key in self.executables.keys():
             self.set_executable(key, self.executables[key])
 
@@ -363,6 +366,13 @@ class Compiler:
         libraries).
         """
         self.objects = objects[:]
+
+    if sys.platform.startswith('os2'):
+        def set_link_version(self, version):
+            """Set the version, so we can create a nice bldlevel string in the
+            linking stage
+            """
+            self.version = version
 
     # -- Private utility methods --------------------------------------
     # (here for the convenience of subclasses)
@@ -1189,6 +1199,7 @@ _default_compilers = (
     # OS name mappings
     ('posix', 'unix'),
     ('nt', 'msvc'),
+    ('os2knix', 'emx'),
 )
 
 
@@ -1238,6 +1249,7 @@ compiler_class = {
     ),
     'bcpp': ('bcppcompiler', 'BCPPCompiler', "Borland C++ Compiler"),
     'zos': ('zosccompiler', 'zOSCCompiler', 'IBM XL C/C++ Compilers'),
+    'emx': ('emxccompiler', 'EMXCCompiler', "OS/2 Port of GNU C Compiler"),
 }
 
 

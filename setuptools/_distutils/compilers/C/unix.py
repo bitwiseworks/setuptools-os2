@@ -158,6 +158,11 @@ class Compiler(base.Compiler):
         dylib_lib_extension = ".dll"
         dylib_lib_format = "cyg%s%s"
 
+    if sys.platform == "os2knix":
+        exe_extension = ".exe"
+        shared_lib_extension = "_dll.a"
+        dylib_lib_extension = ".dll"
+
     def _fix_lib_args(self, libraries, library_dirs, runtime_library_dirs):
         """Remove standard library path from rpath"""
         libraries, library_dirs, runtime_library_dirs = super()._fix_lib_args(
@@ -344,6 +349,8 @@ class Compiler(base.Compiler):
                 return "-Wl,-rpath," + dir
             else:  # no support for -rpath on earlier macOS versions
                 return "-L" + dir
+        elif sys.platform[:7] == "os2knix":
+            return "-L" + dir
         elif sys.platform[:7] == "freebsd":
             return "-Wl,-rpath=" + dir
         elif sys.platform[:5] == "hp-ux":

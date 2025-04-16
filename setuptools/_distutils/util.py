@@ -147,7 +147,10 @@ def change_root(
     Otherwise, it requires making 'pathname' relative and then joining the
     two, which is tricky on DOS/Windows and Mac OS.
     """
-    if os.name == 'posix':
+    if new_root is None or new_root == '':
+        return pathname
+
+    if os.name == 'posix' or os.name == 'os2':
         if not os.path.isabs(pathname):
             return os.path.join(new_root, pathname)
         else:

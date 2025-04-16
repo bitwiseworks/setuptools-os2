@@ -105,7 +105,7 @@ def find_executable(executable: str, path: str | None = None) -> str | None:
         'Use shutil.which instead of find_executable', DeprecationWarning, stacklevel=2
     )
     _, ext = os.path.splitext(executable)
-    if (sys.platform == 'win32') and (ext != '.exe'):
+    if (sys.platform == 'win32' or sys.platform.startswith('os2')) and (ext != '.exe'):
         executable = executable + '.exe'
 
     if os.path.isfile(executable):

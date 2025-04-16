@@ -86,7 +86,7 @@ class bdist(Command):
 
     # This won't do in reality: will need to distinguish RPM-ish Linux,
     # Debian-ish Linux, Solaris, FreeBSD, ..., Windows, Mac OS.
-    default_format: ClassVar[dict[str, str]] = {'posix': 'gztar', 'nt': 'zip'}
+    default_format: ClassVar[dict[str, str]] = {'posix': 'gztar', 'nt': 'zip', 'os2': 'zip'}
 
     # Define commands in preferred order for the --help-formats option
     format_commands = ListCompat({

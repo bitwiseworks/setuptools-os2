@@ -213,7 +213,7 @@ class bdist_rpm(Command):
                 "--python and --fix-python are mutually exclusive options"
             )
 
-        if os.name != 'posix':
+        if os.name != 'posix' and os.name != 'os2':
             raise DistutilsPlatformError(
                 f"don't know how to create RPM distributions on platform {os.name}"
             )
@@ -353,6 +353,8 @@ class bdist_rpm(Command):
         src_rpm = nvr_string + ".src.rpm"
         non_src_rpm = "%{arch}/" + nvr_string + ".%{arch}.rpm"
         q_cmd = rf"rpm -q --qf '{src_rpm} {non_src_rpm}\n' --specfile '{spec_path}'"
+        if os.name == 'os2':
+            q_cmd = q_cmd.replace( '%{', '%%{')
 
         out = os.popen(q_cmd)
         try:

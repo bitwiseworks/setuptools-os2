@@ -219,6 +219,22 @@ def _get_python_inc_nt(prefix, spec_prefix, plat_specific):
     return os.path.join(prefix, "include")
 
 
+def _get_python_inc_os2(prefix, spec_prefix, plat_specific):
+    if python_build:
+        # Assume the executable is in the build directory.  The
+        # pyconfig.h file should be in the same directory.  Since
+        # the build directory may not be the source directory, we
+        # must use "srcdir" from the makefile to find the "Include"
+        # directory.
+        if plat_specific:
+            return _sys_home or project_base
+        else:
+            incdir = os.path.join(get_config_var('srcdir'), 'Include')
+            return os.path.normpath(incdir)
+    python_dir = 'python' + get_python_version()
+    return os.path.join(prefix, "include", python_dir)
+
+
 # allow this behavior to be monkey-patched. Ref pypa/distutils#2.
 def _posix_lib(standard_lib, libpython, early_prefix, prefix):
     if standard_lib:
@@ -268,6 +284,14 @@ def get_python_lib(
             return os.path.join(prefix, "Lib")
         else:
             return os.path.join(prefix, "Lib", "site-packages")
+    elif os.name == "os2":
+        libpython = os.path.join(prefix, "lib",
+                                 "python" + get_python_version())
+        if standard_lib:
+            return libpython
+        else:
+            return os.path.join(libpython, "site-packages")
+
     else:
         raise DistutilsPlatformError(
             f"I don't know where Python installs its library on platform '{os.name}'"
@@ -298,7 +322,7 @@ def customize_compiler(compiler: CCompiler) -> None:
     Mainly needed on Unix, so we can plug in the information that
     varies across Unices and is stored in Python's Makefile.
     """
-    if compiler.compiler_type in ["unix", "cygwin"] or (
+    if compiler.compiler_type in ["unix", "cygwin", "emx"] or (
         compiler.compiler_type == "mingw32" and is_mingw()
     ):
         _customize_macos()

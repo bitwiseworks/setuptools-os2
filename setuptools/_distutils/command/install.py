@@ -31,6 +31,13 @@ WINDOWS_SCHEME = {
     'scripts': '{base}/Scripts',
     'data': '{base}',
 }
+OS2_SCHEME = {
+    'purelib': '{base}/lib/python{py_version_short}/site-packages',
+    'platlib': '{base}/lib/python{py_version_short}/site-packages',
+    'headers': '{base}/include/python{py_version_short}/{dist_name}',
+    'scripts': '{base}/bin',
+    'data'   : '{base}',
+}
 
 INSTALL_SCHEMES = {
     'posix_prefix': {
@@ -50,6 +57,7 @@ INSTALL_SCHEMES = {
         'data': '{base}',
     },
     'nt': WINDOWS_SCHEME,
+    'os2': OS2_SCHEME,
     'pypy': {
         'purelib': '{base}/site-packages',
         'platlib': '{base}/site-packages',
@@ -86,6 +94,13 @@ if HAS_USER_SITE:
         'data': '{userbase}',
     }
 
+    INSTALL_SCHEMES['os2_user'] = {
+        'purelib': '{usersite}',
+        'platlib': '{usersite}',
+        'headers': '{userbase}/Python{py_version_nodot_plat}/Include/{dist_name}',
+        'scripts': '{userbase}/Python{py_version_nodot_plat}/Scripts',
+        'data'   : '{userbase}',
+    }
 
 INSTALL_SCHEMES.update(fw.schemes)
 
@@ -362,7 +377,7 @@ class install(Command):
             )
 
         # Next, stuff that's wrong (or dubious) only on certain platforms.
-        if os.name != "posix":
+        if os.name != "posix" and os.name != "os2":
             if self.exec_prefix:
                 self.warn("exec-prefix option ignored on this platform")
                 self.exec_prefix = None
@@ -377,7 +392,7 @@ class install(Command):
 
         self.dump_dirs("pre-finalize_{unix,other}")
 
-        if os.name == 'posix':
+        if os.name == 'posix' or os.name == "os2":
             self.finalize_unix()
         else:
             self.finalize_other()

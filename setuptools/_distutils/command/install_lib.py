@@ -115,7 +115,7 @@ class install_lib(Command):
     # Any: https://typing.readthedocs.io/en/latest/guides/writing_stubs.html#the-any-trick
     def install(self) -> list[str] | Any:
         if os.path.isdir(self.build_dir):
-            outfiles = self.copy_tree(self.build_dir, self.install_dir)
+            outfiles = self.copy_tree(self.build_dir, self.install_dir, preserve_symlinks=1)
         else:
             self.warn(
                 f"'{self.build_dir}' does not exist -- no Python modules to install"
