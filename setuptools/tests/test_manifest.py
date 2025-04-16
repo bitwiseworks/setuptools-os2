@@ -6,17 +6,19 @@ import os
 import shutil
 import sys
 import tempfile
+import itertools
 from distutils import log
 from distutils.errors import DistutilsTemplateError
 
+import pkg_resources.py31compat
 from setuptools.command.egg_info import FileList, egg_info, translate_pattern
 from setuptools.dist import Distribution
-import six
+from setuptools.extern import six
 from setuptools.tests.textwrap import DALS
 
 import pytest
 
-py3_only = pytest.mark.xfail(six.PY2, reason="Test runs on Python 3 only")
+__metaclass__ = type
 
 
 def make_local_path(s):
@@ -65,35 +67,99 @@ default_files = frozenset(map(make_local_path, [
 ]))
 
 
-def get_pattern(glob):
-    return translate_pattern(make_local_path(glob)).pattern
-
-
-def test_translated_pattern_test():
-    l = make_local_path
-    assert get_pattern('foo') == r'foo\Z(?ms)'
-    assert get_pattern(l('foo/bar')) == l(r'foo\/bar\Z(?ms)')
+translate_specs = [
+    ('foo', ['foo'], ['bar', 'foobar']),
+    ('foo/bar', ['foo/bar'], ['foo/bar/baz', './foo/bar', 'foo']),
 
     # Glob matching
-    assert get_pattern('*.txt') == l(r'[^\/]*\.txt\Z(?ms)')
-    assert get_pattern('dir/*.txt') == l(r'dir\/[^\/]*\.txt\Z(?ms)')
-    assert get_pattern('*/*.py') == l(r'[^\/]*\/[^\/]*\.py\Z(?ms)')
-    assert get_pattern('docs/page-?.txt') \
-        == l(r'docs\/page\-[^\/]\.txt\Z(?ms)')
+    ('*.txt', ['foo.txt', 'bar.txt'], ['foo/foo.txt']),
+    (
+        'dir/*.txt',
+        ['dir/foo.txt', 'dir/bar.txt', 'dir/.txt'], ['notdir/foo.txt']),
+    ('*/*.py', ['bin/start.py'], []),
+    ('docs/page-?.txt', ['docs/page-9.txt'], ['docs/page-10.txt']),
 
     # Globstars change what they mean depending upon where they are
-    assert get_pattern(l('foo/**/bar')) == l(r'foo\/(?:[^\/]+\/)*bar\Z(?ms)')
-    assert get_pattern(l('foo/**')) == l(r'foo\/.*\Z(?ms)')
-    assert get_pattern(l('**')) == r'.*\Z(?ms)'
+    (
+        'foo/**/bar',
+        ['foo/bing/bar', 'foo/bing/bang/bar', 'foo/bar'],
+        ['foo/abar'],
+    ),
+    (
+        'foo/**',
+        ['foo/bar/bing.py', 'foo/x'],
+        ['/foo/x'],
+    ),
+    (
+        '**',
+        ['x', 'abc/xyz', '@nything'],
+        [],
+    ),
 
     # Character classes
-    assert get_pattern('pre[one]post') == r'pre[one]post\Z(?ms)'
-    assert get_pattern('hello[!one]world') == r'hello[^one]world\Z(?ms)'
-    assert get_pattern('[]one].txt') == r'[\]one]\.txt\Z(?ms)'
-    assert get_pattern('foo[!]one]bar') == r'foo[^\]one]bar\Z(?ms)'
+    (
+        'pre[one]post',
+        ['preopost', 'prenpost', 'preepost'],
+        ['prepost', 'preonepost'],
+    ),
+
+    (
+        'hello[!one]world',
+        ['helloxworld', 'helloyworld'],
+        ['hellooworld', 'helloworld', 'hellooneworld'],
+    ),
+
+    (
+        '[]one].txt',
+        ['o.txt', '].txt', 'e.txt'],
+        ['one].txt'],
+    ),
+
+    (
+        'foo[!]one]bar',
+        ['fooybar'],
+        ['foo]bar', 'fooobar', 'fooebar'],
+    ),
+
+]
+"""
+A spec of inputs for 'translate_pattern' and matches and mismatches
+for that input.
+"""
+
+match_params = itertools.chain.from_iterable(
+    zip(itertools.repeat(pattern), matches)
+    for pattern, matches, mismatches in translate_specs
+)
 
 
-class TempDirTestCase(object):
+@pytest.fixture(params=match_params)
+def pattern_match(request):
+    return map(make_local_path, request.param)
+
+
+mismatch_params = itertools.chain.from_iterable(
+    zip(itertools.repeat(pattern), mismatches)
+    for pattern, matches, mismatches in translate_specs
+)
+
+
+@pytest.fixture(params=mismatch_params)
+def pattern_mismatch(request):
+    return map(make_local_path, request.param)
+
+
+def test_translated_pattern_match(pattern_match):
+    pattern, target = pattern_match
+    assert translate_pattern(pattern).match(target)
+
+
+def test_translated_pattern_mismatch(pattern_mismatch):
+    pattern, target = pattern_mismatch
+    assert not translate_pattern(pattern).match(target)
+
+
+class TempDirTestCase:
     def setup_method(self, method):
         self.temp_dir = tempfile.mkdtemp()
         self.old_cwd = os.getcwd()
@@ -178,77 +244,77 @@ class TestManifestTest(TempDirTestCase):
 
     def test_exclude(self):
         """Include everything in app/ except the text files"""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest(
             """
             include app/*
             exclude app/*.txt
             """)
-        files = default_files | set([l('app/c.rst')])
+        files = default_files | set([ml('app/c.rst')])
         assert files == self.get_files()
 
     def test_include_multiple(self):
         """Include with multiple patterns."""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest("include app/*.txt app/static/*")
         files = default_files | set([
-            l('app/a.txt'), l('app/b.txt'),
-            l('app/static/app.js'), l('app/static/app.js.map'),
-            l('app/static/app.css'), l('app/static/app.css.map')])
+            ml('app/a.txt'), ml('app/b.txt'),
+            ml('app/static/app.js'), ml('app/static/app.js.map'),
+            ml('app/static/app.css'), ml('app/static/app.css.map')])
         assert files == self.get_files()
 
     def test_graft(self):
         """Include the whole app/static/ directory."""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest("graft app/static")
         files = default_files | set([
-            l('app/static/app.js'), l('app/static/app.js.map'),
-            l('app/static/app.css'), l('app/static/app.css.map')])
+            ml('app/static/app.js'), ml('app/static/app.js.map'),
+            ml('app/static/app.css'), ml('app/static/app.css.map')])
         assert files == self.get_files()
 
     def test_graft_glob_syntax(self):
         """Include the whole app/static/ directory."""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest("graft */static")
         files = default_files | set([
-            l('app/static/app.js'), l('app/static/app.js.map'),
-            l('app/static/app.css'), l('app/static/app.css.map')])
+            ml('app/static/app.js'), ml('app/static/app.js.map'),
+            ml('app/static/app.css'), ml('app/static/app.css.map')])
         assert files == self.get_files()
 
     def test_graft_global_exclude(self):
         """Exclude all *.map files in the project."""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest(
             """
             graft app/static
             global-exclude *.map
             """)
         files = default_files | set([
-            l('app/static/app.js'), l('app/static/app.css')])
+            ml('app/static/app.js'), ml('app/static/app.css')])
         assert files == self.get_files()
 
     def test_global_include(self):
         """Include all *.rst, *.js, and *.css files in the whole tree."""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest(
             """
             global-include *.rst *.js *.css
             """)
         files = default_files | set([
-            '.hidden.rst', 'testing.rst', l('app/c.rst'),
-            l('app/static/app.js'), l('app/static/app.css')])
+            '.hidden.rst', 'testing.rst', ml('app/c.rst'),
+            ml('app/static/app.js'), ml('app/static/app.css')])
         assert files == self.get_files()
 
     def test_graft_prune(self):
         """Include all files in app/, except for the whole app/static/ dir."""
-        l = make_local_path
+        ml = make_local_path
         self.make_manifest(
             """
             graft app
             prune app/static
             """)
         files = default_files | set([
-            l('app/a.txt'), l('app/b.txt'), l('app/c.rst')])
+            ml('app/a.txt'), ml('app/b.txt'), ml('app/c.rst')])
         assert files == self.get_files()
 
 
@@ -298,14 +364,13 @@ class TestFileListTest(TempDirTestCase):
         for file in files:
             file = os.path.join(self.temp_dir, file)
             dirname, basename = os.path.split(file)
-            if not os.path.exists(dirname):
-                os.makedirs(dirname)
+            pkg_resources.py31compat.makedirs(dirname, exist_ok=True)
             open(file, 'w').close()
 
     def test_process_template_line(self):
         # testing  all MANIFEST.in template patterns
         file_list = FileList()
-        l = make_local_path
+        ml = make_local_path
 
         # simulated file list
         self.make_files([
@@ -313,16 +378,16 @@ class TestFileListTest(TempDirTestCase):
             'buildout.cfg',
             # filelist does not filter out VCS directories,
             # it's sdist that does
-            l('.hg/last-message.txt'),
-            l('global/one.txt'),
-            l('global/two.txt'),
-            l('global/files.x'),
-            l('global/here.tmp'),
-            l('f/o/f.oo'),
-            l('dir/graft-one'),
-            l('dir/dir2/graft2'),
-            l('dir3/ok'),
-            l('dir3/sub/ok.txt'),
+            ml('.hg/last-message.txt'),
+            ml('global/one.txt'),
+            ml('global/two.txt'),
+            ml('global/files.x'),
+            ml('global/here.tmp'),
+            ml('f/o/f.oo'),
+            ml('dir/graft-one'),
+            ml('dir/dir2/graft2'),
+            ml('dir3/ok'),
+            ml('dir3/sub/ok.txt'),
         ])
 
         MANIFEST_IN = DALS("""\
@@ -349,12 +414,12 @@ class TestFileListTest(TempDirTestCase):
             'buildout.cfg',
             'four.txt',
             'ok',
-            l('.hg/last-message.txt'),
-            l('dir/graft-one'),
-            l('dir/dir2/graft2'),
-            l('f/o/f.oo'),
-            l('global/one.txt'),
-            l('global/two.txt'),
+            ml('.hg/last-message.txt'),
+            ml('dir/graft-one'),
+            ml('dir/dir2/graft2'),
+            ml('f/o/f.oo'),
+            ml('global/one.txt'),
+            ml('global/two.txt'),
         ]
 
         file_list.sort()
@@ -411,10 +476,10 @@ class TestFileListTest(TempDirTestCase):
                 assert False, "Should have thrown an error"
 
     def test_include(self):
-        l = make_local_path
+        ml = make_local_path
         # include
         file_list = FileList()
-        self.make_files(['a.py', 'b.txt', l('d/c.py')])
+        self.make_files(['a.py', 'b.txt', ml('d/c.py')])
 
         file_list.process_template_line('include *.py')
         file_list.sort()
@@ -427,42 +492,42 @@ class TestFileListTest(TempDirTestCase):
         self.assertWarnings()
 
     def test_exclude(self):
-        l = make_local_path
+        ml = make_local_path
         # exclude
         file_list = FileList()
-        file_list.files = ['a.py', 'b.txt', l('d/c.py')]
+        file_list.files = ['a.py', 'b.txt', ml('d/c.py')]
 
         file_list.process_template_line('exclude *.py')
         file_list.sort()
-        assert file_list.files == ['b.txt', l('d/c.py')]
+        assert file_list.files == ['b.txt', ml('d/c.py')]
         self.assertNoWarnings()
 
         file_list.process_template_line('exclude *.rb')
         file_list.sort()
-        assert file_list.files == ['b.txt', l('d/c.py')]
+        assert file_list.files == ['b.txt', ml('d/c.py')]
         self.assertWarnings()
 
     def test_global_include(self):
-        l = make_local_path
+        ml = make_local_path
         # global-include
         file_list = FileList()
-        self.make_files(['a.py', 'b.txt', l('d/c.py')])
+        self.make_files(['a.py', 'b.txt', ml('d/c.py')])
 
         file_list.process_template_line('global-include *.py')
         file_list.sort()
-        assert file_list.files == ['a.py', l('d/c.py')]
+        assert file_list.files == ['a.py', ml('d/c.py')]
         self.assertNoWarnings()
 
         file_list.process_template_line('global-include *.rb')
         file_list.sort()
-        assert file_list.files == ['a.py', l('d/c.py')]
+        assert file_list.files == ['a.py', ml('d/c.py')]
         self.assertWarnings()
 
     def test_global_exclude(self):
-        l = make_local_path
+        ml = make_local_path
         # global-exclude
         file_list = FileList()
-        file_list.files = ['a.py', 'b.txt', l('d/c.py')]
+        file_list.files = ['a.py', 'b.txt', ml('d/c.py')]
 
         file_list.process_template_line('global-exclude *.py')
         file_list.sort()
@@ -475,65 +540,65 @@ class TestFileListTest(TempDirTestCase):
         self.assertWarnings()
 
     def test_recursive_include(self):
-        l = make_local_path
+        ml = make_local_path
         # recursive-include
         file_list = FileList()
-        self.make_files(['a.py', l('d/b.py'), l('d/c.txt'), l('d/d/e.py')])
+        self.make_files(['a.py', ml('d/b.py'), ml('d/c.txt'), ml('d/d/e.py')])
 
         file_list.process_template_line('recursive-include d *.py')
         file_list.sort()
-        assert file_list.files == [l('d/b.py'), l('d/d/e.py')]
+        assert file_list.files == [ml('d/b.py'), ml('d/d/e.py')]
         self.assertNoWarnings()
 
         file_list.process_template_line('recursive-include e *.py')
         file_list.sort()
-        assert file_list.files == [l('d/b.py'), l('d/d/e.py')]
+        assert file_list.files == [ml('d/b.py'), ml('d/d/e.py')]
         self.assertWarnings()
 
     def test_recursive_exclude(self):
-        l = make_local_path
+        ml = make_local_path
         # recursive-exclude
         file_list = FileList()
-        file_list.files = ['a.py', l('d/b.py'), l('d/c.txt'), l('d/d/e.py')]
+        file_list.files = ['a.py', ml('d/b.py'), ml('d/c.txt'), ml('d/d/e.py')]
 
         file_list.process_template_line('recursive-exclude d *.py')
         file_list.sort()
-        assert file_list.files == ['a.py', l('d/c.txt')]
+        assert file_list.files == ['a.py', ml('d/c.txt')]
         self.assertNoWarnings()
 
         file_list.process_template_line('recursive-exclude e *.py')
         file_list.sort()
-        assert file_list.files == ['a.py', l('d/c.txt')]
+        assert file_list.files == ['a.py', ml('d/c.txt')]
         self.assertWarnings()
 
     def test_graft(self):
-        l = make_local_path
+        ml = make_local_path
         # graft
         file_list = FileList()
-        self.make_files(['a.py', l('d/b.py'), l('d/d/e.py'), l('f/f.py')])
+        self.make_files(['a.py', ml('d/b.py'), ml('d/d/e.py'), ml('f/f.py')])
 
         file_list.process_template_line('graft d')
         file_list.sort()
-        assert file_list.files == [l('d/b.py'), l('d/d/e.py')]
+        assert file_list.files == [ml('d/b.py'), ml('d/d/e.py')]
         self.assertNoWarnings()
 
         file_list.process_template_line('graft e')
         file_list.sort()
-        assert file_list.files == [l('d/b.py'), l('d/d/e.py')]
+        assert file_list.files == [ml('d/b.py'), ml('d/d/e.py')]
         self.assertWarnings()
 
     def test_prune(self):
-        l = make_local_path
+        ml = make_local_path
         # prune
         file_list = FileList()
-        file_list.files = ['a.py', l('d/b.py'), l('d/d/e.py'), l('f/f.py')]
+        file_list.files = ['a.py', ml('d/b.py'), ml('d/d/e.py'), ml('f/f.py')]
 
         file_list.process_template_line('prune d')
         file_list.sort()
-        assert file_list.files == ['a.py', l('f/f.py')]
+        assert file_list.files == ['a.py', ml('f/f.py')]
         self.assertNoWarnings()
 
         file_list.process_template_line('prune e')
         file_list.sort()
-        assert file_list.files == ['a.py', l('f/f.py')]
+        assert file_list.files == ['a.py', ml('f/f.py')]
         self.assertWarnings()

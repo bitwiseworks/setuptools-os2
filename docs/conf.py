@@ -34,7 +34,7 @@ import os
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions = ['jaraco.packaging.sphinx', 'rst.linker', 'sphinx.ext.autosectionlabel']
+extensions = ['jaraco.packaging.sphinx', 'rst.linker']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -44,6 +44,9 @@ source_suffix = '.txt'
 
 # The master toctree document.
 master_doc = 'index'
+
+# A list of glob-style patterns that should be excluded when looking for source files.
+exclude_patterns = ['requirements.txt']
 
 # List of directories, relative to source directory, that shouldn't be searched
 # for source files.
@@ -66,7 +69,7 @@ html_theme_path = ['_theme']
 html_use_smartypants = True
 
 # Custom sidebar templates, maps document names to template names.
-html_sidebars = {'index': 'indexsidebar.html'}
+html_sidebars = {'index': ['relations.html', 'sourcelink.html', 'indexsidebar.html', 'searchbox.html']}
 
 # If false, no module index is generated.
 html_use_modindex = False

@@ -9,8 +9,8 @@ import unicodedata
 import contextlib
 import io
 
-import six
-from six.moves import map
+from setuptools.extern import six
+from setuptools.extern.six.moves import map
 
 import pytest
 
@@ -19,8 +19,9 @@ from setuptools.command.sdist import sdist
 from setuptools.command.egg_info import manifest_maker
 from setuptools.dist import Distribution
 from setuptools.tests import fail_on_ascii
+from .text import Filenames
+from . import py3_only
 
-py3_only = pytest.mark.xfail(six.PY2, reason="Test runs on Python 3 only")
 
 SETUP_ATTRS = {
     'name': 'sdist_test',
@@ -36,13 +37,7 @@ from setuptools import setup
 setup(**%r)
 """ % SETUP_ATTRS
 
-if six.PY3:
-    LATIN1_FILENAME = 'smörbröd.py'.encode('latin-1')
-else:
-    LATIN1_FILENAME = 'sm\xf6rbr\xf6d.py'
 
-
-# Cannot use context manager because of Python 2.4
 @contextlib.contextmanager
 def quiet():
     old_stdout, old_stderr = sys.stdout, sys.stderr
@@ -53,17 +48,10 @@ def quiet():
         sys.stdout, sys.stderr = old_stdout, old_stderr
 
 
-# Fake byte literals for Python <= 2.5
-def b(s, encoding='utf-8'):
-    if six.PY3:
-        return s.encode(encoding)
-    return s
-
-
 # Convert to POSIX path
 def posix(path):
     if six.PY3 and not isinstance(path, str):
-        return path.replace(os.sep.encode('ascii'), b('/'))
+        return path.replace(os.sep.encode('ascii'), b'/')
     else:
         return path.replace(os.sep, '/')
 
@@ -86,12 +74,26 @@ def read_all_bytes(filename):
         return fp.read()
 
 
+def latin1_fail():
+    try:
+        desc, filename = tempfile.mkstemp(suffix=Filenames.latin_1)
+        os.close(desc)
+        os.remove(filename)
+    except Exception:
+        return True
+
+
+fail_on_latin1_encoded_filenames = pytest.mark.xfail(
+    latin1_fail(),
+    reason="System does not support latin-1 filenames",
+)
+
+
 class TestSdistTest:
     def setup_method(self, method):
         self.temp_dir = tempfile.mkdtemp()
-        f = open(os.path.join(self.temp_dir, 'setup.py'), 'w')
-        f.write(SETUP_PY)
-        f.close()
+        with open(os.path.join(self.temp_dir, 'setup.py'), 'w') as f:
+            f.write(SETUP_PY)
 
         # Set up the rest of the test package
         test_pkg = os.path.join(self.temp_dir, 'sdist_test')
@@ -132,10 +134,51 @@ class TestSdistTest:
         assert os.path.join('sdist_test', 'c.rst') not in manifest
         assert os.path.join('d', 'e.dat') in manifest
 
+    def test_setup_py_exists(self):
+        dist = Distribution(SETUP_ATTRS)
+        dist.script_name = 'foo.py'
+        cmd = sdist(dist)
+        cmd.ensure_finalized()
+
+        with quiet():
+            cmd.run()
+
+        manifest = cmd.filelist.files
+        assert 'setup.py' in manifest
+
+    def test_setup_py_missing(self):
+        dist = Distribution(SETUP_ATTRS)
+        dist.script_name = 'foo.py'
+        cmd = sdist(dist)
+        cmd.ensure_finalized()
+
+        if os.path.exists("setup.py"):
+            os.remove("setup.py")
+        with quiet():
+            cmd.run()
+
+        manifest = cmd.filelist.files
+        assert 'setup.py' not in manifest
+
+    def test_setup_py_excluded(self):
+        with open("MANIFEST.in", "w") as manifest_file:
+            manifest_file.write("exclude setup.py")
+
+        dist = Distribution(SETUP_ATTRS)
+        dist.script_name = 'foo.py'
+        cmd = sdist(dist)
+        cmd.ensure_finalized()
+
+        with quiet():
+            cmd.run()
+
+        manifest = cmd.filelist.files
+        assert 'setup.py' not in manifest
+
     def test_defaults_case_sensitivity(self):
         """
-            Make sure default files (README.*, etc.) are added in a case-sensitive
-            way to avoid problems with packages built on Windows.
+        Make sure default files (README.*, etc.) are added in a case-sensitive
+        way to avoid problems with packages built on Windows.
         """
 
         open(os.path.join(self.temp_dir, 'readme.rst'), 'w').close()
@@ -152,7 +195,9 @@ class TestSdistTest:
         with quiet():
             cmd.run()
 
-        # lowercase all names so we can test in a case-insensitive way to make sure the files are not included
+        # lowercase all names so we can test in a
+        # case-insensitive way to make sure the files
+        # are not included.
         manifest = map(lambda x: x.lower(), cmd.filelist.files)
         assert 'readme.rst' not in manifest, manifest
         assert 'setup.py' not in manifest, manifest
@@ -201,8 +246,7 @@ class TestSdistTest:
         mm.manifest = os.path.join('sdist_test.egg-info', 'SOURCES.txt')
         os.mkdir('sdist_test.egg-info')
 
-        # UTF-8 filename
-        filename = os.path.join(b('sdist_test'), b('smörbröd.py'))
+        filename = os.path.join(b'sdist_test', Filenames.utf_8)
 
         # Must touch the file or risk removal
         open(filename, "w").close()
@@ -241,7 +285,7 @@ class TestSdistTest:
         os.mkdir('sdist_test.egg-info')
 
         # Latin-1 filename
-        filename = os.path.join(b('sdist_test'), LATIN1_FILENAME)
+        filename = os.path.join(b'sdist_test', Filenames.latin_1)
 
         # Add filename with surrogates and write manifest
         with quiet():
@@ -275,10 +319,10 @@ class TestSdistTest:
             cmd.run()
 
         # Add UTF-8 filename to manifest
-        filename = os.path.join(b('sdist_test'), b('smörbröd.py'))
+        filename = os.path.join(b'sdist_test', Filenames.utf_8)
         cmd.manifest = os.path.join('sdist_test.egg-info', 'SOURCES.txt')
         manifest = open(cmd.manifest, 'ab')
-        manifest.write(b('\n') + filename)
+        manifest.write(b'\n' + filename)
         manifest.close()
 
         # The file must exist to be included in the filelist
@@ -295,6 +339,7 @@ class TestSdistTest:
         assert filename in cmd.filelist.files
 
     @py3_only
+    @fail_on_latin1_encoded_filenames
     def test_read_manifest_skips_non_utf8_filenames(self):
         # Test for #303.
         dist = Distribution(SETUP_ATTRS)
@@ -307,10 +352,10 @@ class TestSdistTest:
             cmd.run()
 
         # Add Latin-1 filename to manifest
-        filename = os.path.join(b('sdist_test'), LATIN1_FILENAME)
+        filename = os.path.join(b'sdist_test', Filenames.latin_1)
         cmd.manifest = os.path.join('sdist_test.egg-info', 'SOURCES.txt')
         manifest = open(cmd.manifest, 'ab')
-        manifest.write(b('\n') + filename)
+        manifest.write(b'\n' + filename)
         manifest.close()
 
         # The file must exist to be included in the filelist
@@ -326,6 +371,7 @@ class TestSdistTest:
         assert filename not in cmd.filelist.files
 
     @fail_on_ascii
+    @fail_on_latin1_encoded_filenames
     def test_sdist_with_utf8_encoded_filename(self):
         # Test for #303.
         dist = Distribution(SETUP_ATTRS)
@@ -333,8 +379,7 @@ class TestSdistTest:
         cmd = sdist(dist)
         cmd.ensure_finalized()
 
-        # UTF-8 filename
-        filename = os.path.join(b('sdist_test'), b('smörbröd.py'))
+        filename = os.path.join(b'sdist_test', Filenames.utf_8)
         open(filename, 'w').close()
 
         with quiet():
@@ -360,6 +405,7 @@ class TestSdistTest:
         else:
             assert filename in cmd.filelist.files
 
+    @fail_on_latin1_encoded_filenames
     def test_sdist_with_latin1_encoded_filename(self):
         # Test for #303.
         dist = Distribution(SETUP_ATTRS)
@@ -368,7 +414,7 @@ class TestSdistTest:
         cmd.ensure_finalized()
 
         # Latin-1 filename
-        filename = os.path.join(b('sdist_test'), LATIN1_FILENAME)
+        filename = os.path.join(b'sdist_test', Filenames.latin_1)
         open(filename, 'w').close()
         assert os.path.isfile(filename)
 
@@ -381,10 +427,9 @@ class TestSdistTest:
                 # Latin-1 is similar to Windows-1252 however
                 # on mbcs filesys it is not in latin-1 encoding
                 fs_enc = sys.getfilesystemencoding()
-                if fs_enc == 'mbcs':
-                    filename = filename.decode('mbcs')
-                else:
-                    filename = filename.decode('latin-1')
+                if fs_enc != 'mbcs':
+                    fs_enc = 'latin-1'
+                filename = filename.decode(fs_enc)
 
                 assert filename in cmd.filelist.files
             else:

@@ -22,15 +22,14 @@ import sys
 import platform
 import itertools
 import distutils.errors
-from packaging.version import LegacyVersion
+from setuptools.extern.packaging.version import LegacyVersion
 
-from six.moves import filterfalse
+from setuptools.extern.six.moves import filterfalse
 
 from .monkey import get_unpatched
-from . import py27compat
 
 if platform.system() == 'Windows':
-    from six.moves import winreg
+    from setuptools.extern.six.moves import winreg
     safe_env = os.environ
 else:
     """
@@ -46,9 +45,18 @@ else:
 
     safe_env = dict()
 
+_msvc9_suppress_errors = (
+    # msvc9compiler isn't available on some platforms
+    ImportError,
+
+    # msvc9compiler raises DistutilsPlatformError in some
+    # environments. See #1118.
+    distutils.errors.DistutilsPlatformError,
+)
+
 try:
     from distutils.msvc9compiler import Reg
-except ImportError:
+except _msvc9_suppress_errors:
     pass
 
 
@@ -136,12 +144,10 @@ def msvc9_query_vcvarsall(ver, arch='x86', *args, **kwargs):
 
     # If error, try to set environment directly
     try:
-        env = EnvironmentInfo(arch, ver).return_env()
+        return EnvironmentInfo(arch, ver).return_env()
     except distutils.errors.DistutilsPlatformError as exc:
         _augment_exception(exc, ver, arch)
         raise
-
-    return py27compat.dict_values_strings(env)
 
 
 def msvc14_get_vc_env(plat_spec):
@@ -226,8 +232,7 @@ def _augment_exception(exc, version, arch=''):
         elif version >= 14.0:
             # For VC++ 14.0 Redirect user to Visual C++ Build Tools
             message += (' Get it with "Microsoft Visual C++ Build Tools": '
-                        r'http://landinghub.visualstudio.com/'
-                        'visual-cpp-build-tools')
+                        r'https://visualstudio.microsoft.com/downloads/')
 
     exc.args = (message, )
 

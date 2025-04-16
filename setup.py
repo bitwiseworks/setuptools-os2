@@ -3,10 +3,8 @@
 Distutils setup file, used to install or test 'setuptools'
 """
 
-import io
 import os
 import sys
-import textwrap
 
 import setuptools
 
@@ -19,7 +17,7 @@ def require_metadata():
     if not os.path.exists(egg_info_dir):
         msg = (
             "Cannot build setuptools without metadata. "
-            "Install rwt and run `rwt -- bootstrap.py`."
+            "Run `bootstrap.py`."
         )
         raise RuntimeError(msg)
 
@@ -45,13 +43,9 @@ def _gen_console_scripts():
     )
     if any(os.environ.get(var) not in (None, "", "0") for var in var_names):
         return
-    yield ("easy_install-{shortver} = setuptools.command.easy_install:main"
-        .format(shortver=sys.version[:3]))
+    tmpl = "easy_install-{shortver} = setuptools.command.easy_install:main"
+    yield tmpl.format(shortver=sys.version[:3])
 
-
-readme_path = os.path.join(here, 'README.rst')
-with io.open(readme_path, encoding='utf-8') as readme_file:
-    long_description = readme_file.read()
 
 package_data = dict(
     setuptools=['script (dev).tmpl', 'script.tmpl', 'site-patch.py'],
@@ -88,20 +82,8 @@ def pypi_link(pkg_filename):
 
 
 setup_params = dict(
-    name="setuptools",
-    version="34.4.1",
-    description="Easily download, build, install, upgrade, and uninstall "
-        "Python packages",
-    author="Python Packaging Authority",
-    author_email="distutils-sig@python.org",
-    long_description=long_description,
-    keywords="CPAN PyPI distutils eggs package management",
-    url="https://github.com/pypa/setuptools",
     src_root=None,
-    packages=setuptools.find_packages(exclude=['*.tests']),
     package_data=package_data,
-    py_modules=['easy_install'],
-    zip_safe=True,
     entry_points={
         "distutils.commands": [
             "%(cmd)s = setuptools.command.%(cmd)s:%(cmd)s" % locals()
@@ -135,7 +117,10 @@ setup_params = dict(
             "requires.txt = setuptools.command.egg_info:write_requirements",
             "entry_points.txt = setuptools.command.egg_info:write_entries",
             "eager_resources.txt = setuptools.command.egg_info:overwrite_arg",
-            "namespace_packages.txt = setuptools.command.egg_info:overwrite_arg",
+            (
+                "namespace_packages.txt = "
+                "setuptools.command.egg_info:overwrite_arg"
+            ),
             "top_level.txt = setuptools.command.egg_info:write_toplevel_names",
             "depends.txt = setuptools.command.egg_info:warn_depends_obsolete",
             "dependency_links.txt = setuptools.command.egg_info:overwrite_arg",
@@ -143,34 +128,6 @@ setup_params = dict(
         "console_scripts": list(_gen_console_scripts()),
         "setuptools.installation":
             ['eggsecutable = setuptools.command.easy_install:bootstrap'],
-    },
-    classifiers=textwrap.dedent("""
-        Development Status :: 5 - Production/Stable
-        Intended Audience :: Developers
-        License :: OSI Approved :: MIT License
-        Operating System :: OS Independent
-        Programming Language :: Python :: 2
-        Programming Language :: Python :: 2.6
-        Programming Language :: Python :: 2.7
-        Programming Language :: Python :: 3
-        Programming Language :: Python :: 3.3
-        Programming Language :: Python :: 3.4
-        Programming Language :: Python :: 3.5
-        Programming Language :: Python :: 3.6
-        Topic :: Software Development :: Libraries :: Python Modules
-        Topic :: System :: Archiving :: Packaging
-        Topic :: System :: Systems Administration
-        Topic :: Utilities
-        """).strip().splitlines(),
-    python_requires='>=2.6,!=3.0.*,!=3.1.*,!=3.2.*',
-    install_requires=[
-        'packaging>=16.8',
-        'six>=1.6.0',
-        'appdirs>=1.4.0',
-    ],
-    extras_require={
-        "ssl:sys_platform=='win32'": "wincertstore==0.2",
-        "certs": "certifi==2016.9.26",
     },
     dependency_links=[
         pypi_link(
@@ -180,7 +137,6 @@ setup_params = dict(
             'wincertstore-0.2.zip#md5=ae728f2f007185648d0c7a8679b361e2',
         ),
     ],
-    scripts=[],
     setup_requires=[
     ] + wheel,
 )

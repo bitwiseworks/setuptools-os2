@@ -7,25 +7,35 @@ mechanical technique for releases, enacted by Travis following a
 successful build of a tagged release per
 `PyPI deployment <https://docs.travis-ci.com/user/deployment/pypi>`_.
 
-To cut a release, install and run ``bumpversion {part}`` where ``part``
+Prior to cutting a release, please use `towncrier`_ to update
+``CHANGES.rst`` to summarize the changes since the last release.
+To update the changelog:
+
+1. Install towncrier via ``pip install towncrier`` if not already installed.
+2. Preview the new ``CHANGES.rst`` entry by running
+   ``towncrier --draft --version {new.version.number}`` (enter the desired
+   version number for the next release).  If any changes are needed, make
+   them and generate a new preview until the output is acceptable.  Run
+   ``git add`` for any modified files.
+3. Run ``towncrier --version {new.version.number}`` to stage the changelog
+   updates in git.
+4. Verify that there are no remaining ``changelog.d/*.rst`` files.  If a
+   file was named incorrectly, it may be ignored by towncrier.
+5. Review the updated ``CHANGES.rst`` file.  If any changes are needed,
+   make the edits and stage them via ``git add CHANGES.rst``.
+
+Once the changelog edits are staged and ready to commit, cut a release by
+installing and running ``bump2version --allow-dirty {part}`` where ``part``
 is major, minor, or patch based on the scope of the changes in the
-release. Then, push the commits to the master branch. If tests pass,
-the release will be uploaded to PyPI (from the Python 3.5 tests).
+release. Then, push the commits to the master branch::
 
-Bootstrap Branch
-----------------
+    $ git push origin master
+    $ git push --tags
 
-Setuptools has a bootstrap script (ez_setup.py), which is hosted in the
-repository in the ``bootstrap`` branch.
+If tests pass, the release will be uploaded to PyPI (from the Python 3.6
+tests).
 
-Therefore, the latest bootstrap script can be retrieved by checking out
-that branch.
-
-The officially-published location of the bootstrap script is hosted on Python
-infrastructure (#python-infra on freenode) at https://bootstrap.pypa.io and
-is updated every fifteen minutes from the bootstrap branch. Sometimes,
-especially when the bootstrap script is rolled back, this
-process doesn't work as expected and requires manual intervention.
+.. _towncrier: https://pypi.org/project/towncrier/
 
 Release Frequency
 -----------------
