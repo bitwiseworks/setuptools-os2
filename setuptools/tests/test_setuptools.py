@@ -1,22 +1,27 @@
 """Tests for the 'setuptools' package"""
 
-import sys
 import os
-import distutils.core
-import distutils.cmd
-from distutils.errors import DistutilsOptionError, DistutilsPlatformError
-from distutils.errors import DistutilsSetupError
-from distutils.core import Extension
-from distutils.version import LooseVersion
+import re
+import sys
+from zipfile import ZipFile
 
 import pytest
+from packaging.version import Version
 
 import setuptools
-import setuptools.dist
 import setuptools.depends as dep
-from setuptools import Feature
+import setuptools.dist
 from setuptools.depends import Require
-from setuptools.extern import six
+
+import distutils.cmd
+import distutils.core
+from distutils.core import Extension
+from distutils.errors import DistutilsSetupError
+
+
+@pytest.fixture(autouse=True)
+def isolated_dir(tmpdir_cwd):
+    return
 
 
 def makeSetup(**args):
@@ -48,37 +53,40 @@ class TestDepends:
         def f1():
             global x, y, z
             x = "test"
-            y = z
+            y = z  # pyright: ignore[reportUnboundVariable] # Explicitly testing for this runtime issue
 
-        fc = six.get_function_code(f1)
+        fc = f1.__code__
 
         # unrecognized name
         assert dep.extract_constant(fc, 'q', -1) is None
 
         # constant assigned
-        dep.extract_constant(fc, 'x', -1) == "test"
+        assert dep.extract_constant(fc, 'x', -1) == "test"
 
         # expression assigned
-        dep.extract_constant(fc, 'y', -1) == -1
+        assert dep.extract_constant(fc, 'y', -1) == -1
 
         # recognized name, not assigned
-        dep.extract_constant(fc, 'z', -1) is None
+        assert dep.extract_constant(fc, 'z', -1) is None
 
     def testFindModule(self):
         with pytest.raises(ImportError):
             dep.find_module('no-such.-thing')
         with pytest.raises(ImportError):
             dep.find_module('setuptools.non-existent')
-        f, p, i = dep.find_module('setuptools.tests')
+        f, _p, _i = dep.find_module('setuptools.tests')
         f.close()
 
     @needs_bytecode
     def testModuleExtract(self):
         from json import __version__
+
         assert dep.get_module_constant('json', '__version__') == __version__
         assert dep.get_module_constant('sys', 'version') == sys.version
-        assert dep.get_module_constant(
-            'setuptools.tests.test_setuptools', '__doc__') == __doc__
+        assert (
+            dep.get_module_constant('setuptools.tests.test_setuptools', '__doc__')
+            == __doc__
+        )
 
     @needs_bytecode
     def testRequire(self):
@@ -86,12 +94,13 @@ class TestDepends:
 
         assert req.name == 'Json'
         assert req.module == 'json'
-        assert req.requested_version == '1.0.3'
+        assert req.requested_version == Version('1.0.3')
         assert req.attribute == '__version__'
         assert req.full_name() == 'Json-1.0.3'
 
         from json import __version__
-        assert req.get_version() == __version__
+
+        assert str(req.get_version()) == __version__
         assert req.version_ok('1.0.9')
         assert not req.version_ok('0.9.1')
         assert not req.version_ok('unknown')
@@ -99,15 +108,15 @@ class TestDepends:
         assert req.is_present()
         assert req.is_current()
 
-        req = Require('Json 3000', '03000', 'json', format=LooseVersion)
-        assert req.is_present()
-        assert not req.is_current()
-        assert not req.version_ok('unknown')
-
         req = Require('Do-what-I-mean', '1.0', 'd-w-i-m')
         assert not req.is_present()
         assert not req.is_current()
 
+    @needs_bytecode
+    def test_require_present(self):
+        # In #1896, this test was failing for months with the only
+        # complaint coming from test runners (not end users).
+        # TODO: Evaluate if this code is needed at all.
         req = Require('Tests', None, 'tests', homepage="http://example.com")
         assert req.format is None
         assert req.attribute is None
@@ -116,6 +125,7 @@ class TestDepends:
         assert req.homepage == 'http://example.com'
 
         from setuptools.tests import __path__
+
         paths = [os.path.dirname(p) for p in __path__]
         assert req.is_present(paths)
         assert req.is_current(paths)
@@ -211,124 +221,6 @@ class TestDistro:
             self.dist.exclude(package_dir=['q'])
 
 
-@pytest.mark.filterwarnings('ignore:Features are deprecated')
-class TestFeatures:
-    def setup_method(self, method):
-        self.req = Require('Distutils', '1.0.3', 'distutils')
-        self.dist = makeSetup(
-            features={
-                'foo': Feature(
-                    "foo", standard=True, require_features=['baz', self.req]),
-                'bar': Feature("bar", standard=True, packages=['pkg.bar'],
-                               py_modules=['bar_et'], remove=['bar.ext'],
-                               ),
-                'baz': Feature(
-                        "baz", optional=False, packages=['pkg.baz'],
-                        scripts=['scripts/baz_it'],
-                        libraries=[('libfoo', 'foo/foofoo.c')]
-                       ),
-                'dwim': Feature("DWIM", available=False, remove='bazish'),
-            },
-            script_args=['--without-bar', 'install'],
-            packages=['pkg.bar', 'pkg.foo'],
-            py_modules=['bar_et', 'bazish'],
-            ext_modules=[Extension('bar.ext', ['bar.c'])]
-        )
-
-    def testDefaults(self):
-        assert not Feature(
-            "test", standard=True, remove='x', available=False
-        ).include_by_default()
-        assert Feature("test", standard=True, remove='x').include_by_default()
-        # Feature must have either kwargs, removes, or require_features
-        with pytest.raises(DistutilsSetupError):
-            Feature("test")
-
-    def testAvailability(self):
-        with pytest.raises(DistutilsPlatformError):
-            self.dist.features['dwim'].include_in(self.dist)
-
-    def testFeatureOptions(self):
-        dist = self.dist
-        assert (
-            ('with-dwim', None, 'include DWIM') in dist.feature_options
-        )
-        assert (
-            ('without-dwim', None, 'exclude DWIM (default)')
-            in dist.feature_options
-        )
-        assert (
-            ('with-bar', None, 'include bar (default)') in dist.feature_options
-        )
-        assert (
-            ('without-bar', None, 'exclude bar') in dist.feature_options
-        )
-        assert dist.feature_negopt['without-foo'] == 'with-foo'
-        assert dist.feature_negopt['without-bar'] == 'with-bar'
-        assert dist.feature_negopt['without-dwim'] == 'with-dwim'
-        assert ('without-baz' not in dist.feature_negopt)
-
-    def testUseFeatures(self):
-        dist = self.dist
-        assert dist.with_foo == 1
-        assert dist.with_bar == 0
-        assert dist.with_baz == 1
-        assert ('bar_et' not in dist.py_modules)
-        assert ('pkg.bar' not in dist.packages)
-        assert ('pkg.baz' in dist.packages)
-        assert ('scripts/baz_it' in dist.scripts)
-        assert (('libfoo', 'foo/foofoo.c') in dist.libraries)
-        assert dist.ext_modules == []
-        assert dist.require_features == [self.req]
-
-        # If we ask for bar, it should fail because we explicitly disabled
-        # it on the command line
-        with pytest.raises(DistutilsOptionError):
-            dist.include_feature('bar')
-
-    def testFeatureWithInvalidRemove(self):
-        with pytest.raises(SystemExit):
-            makeSetup(features={'x': Feature('x', remove='y')})
-
-
-class TestCommandTests:
-    def testTestIsCommand(self):
-        test_cmd = makeSetup().get_command_obj('test')
-        assert (isinstance(test_cmd, distutils.cmd.Command))
-
-    def testLongOptSuiteWNoDefault(self):
-        ts1 = makeSetup(script_args=['test', '--test-suite=foo.tests.suite'])
-        ts1 = ts1.get_command_obj('test')
-        ts1.ensure_finalized()
-        assert ts1.test_suite == 'foo.tests.suite'
-
-    def testDefaultSuite(self):
-        ts2 = makeSetup(test_suite='bar.tests.suite').get_command_obj('test')
-        ts2.ensure_finalized()
-        assert ts2.test_suite == 'bar.tests.suite'
-
-    def testDefaultWModuleOnCmdLine(self):
-        ts3 = makeSetup(
-            test_suite='bar.tests',
-            script_args=['test', '-m', 'foo.tests']
-        ).get_command_obj('test')
-        ts3.ensure_finalized()
-        assert ts3.test_module == 'foo.tests'
-        assert ts3.test_suite == 'foo.tests.test_suite'
-
-    def testConflictingOptions(self):
-        ts4 = makeSetup(
-            script_args=['test', '-m', 'bar.tests', '-s', 'foo.tests.suite']
-        ).get_command_obj('test')
-        with pytest.raises(DistutilsOptionError):
-            ts4.ensure_finalized()
-
-    def testNoSuite(self):
-        ts5 = makeSetup().get_command_obj('test')
-        ts5.ensure_finalized()
-        assert ts5.test_suite is None
-
-
 @pytest.fixture
 def example_source(tmpdir):
     tmpdir.mkdir('foo')
@@ -365,8 +257,34 @@ def can_symlink(tmpdir):
     os.remove(link_fn)
 
 
-def test_findall_missing_symlink(tmpdir, can_symlink):
+@pytest.mark.usefixtures("can_symlink")
+def test_findall_missing_symlink(tmpdir):
     with tmpdir.as_cwd():
         os.symlink('foo', 'bar')
         found = list(setuptools.findall())
         assert found == []
+
+
+@pytest.mark.xfail(reason="unable to exclude tests; #4475 #3260")
+def test_its_own_wheel_does_not_contain_tests(setuptools_wheel):
+    with ZipFile(setuptools_wheel) as zipfile:
+        contents = [f.replace(os.sep, '/') for f in zipfile.namelist()]
+
+    for member in contents:
+        assert '/tests/' not in member
+
+
+def test_wheel_includes_cli_scripts(setuptools_wheel):
+    with ZipFile(setuptools_wheel) as zipfile:
+        contents = [f.replace(os.sep, '/') for f in zipfile.namelist()]
+
+    assert any('cli-64.exe' in member for member in contents)
+
+
+def test_wheel_includes_vendored_metadata(setuptools_wheel):
+    with ZipFile(setuptools_wheel) as zipfile:
+        contents = [f.replace(os.sep, '/') for f in zipfile.namelist()]
+
+    assert any(
+        re.search(r'_vendor/.*\.dist-info/METADATA', member) for member in contents
+    )

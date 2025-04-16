@@ -1,5 +1,5 @@
-"""develop tests
-"""
+"""develop tests"""
+
 import os
 import types
 
@@ -17,7 +17,7 @@ class TestSandbox:
     @staticmethod
     def _file_writer(path):
         def do_write():
-            with open(path, 'w') as f:
+            with open(path, 'w', encoding="utf-8") as f:
                 f.write('xxx')
 
         return do_write
@@ -26,9 +26,7 @@ class TestSandbox:
         """
         It should be possible to execute a setup.py with a Byte Order Mark
         """
-        target = pkg_resources.resource_filename(
-            __name__,
-            'script-with-bom.py')
+        target = pkg_resources.resource_filename(__name__, 'script-with-bom.py')
         namespace = types.ModuleType('namespace')
         setuptools.sandbox._execfile(target, vars(namespace))
         assert namespace.result == 'passed'
@@ -76,8 +74,9 @@ class TestExceptionSaver:
     def test_unpickleable_exception(self):
         class CantPickleThis(Exception):
             "This Exception is unpickleable because it's not in globals"
-            def __repr__(self):
-                return 'CantPickleThis%r' % (self.args,)
+
+            def __repr__(self) -> str:
+                return f'CantPickleThis{self.args!r}'
 
         with setuptools.sandbox.ExceptionSaver() as saved_exc:
             raise CantPickleThis('detail')
@@ -101,9 +100,9 @@ class TestExceptionSaver:
         with pytest.raises(setuptools.sandbox.UnpickleableException) as caught:
             with setuptools.sandbox.save_modules():
                 setuptools.sandbox.hide_setuptools()
-                raise ExceptionUnderTest()
+                raise ExceptionUnderTest
 
-        msg, = caught.value.args
+        (msg,) = caught.value.args
         assert msg == 'ExceptionUnderTest()'
 
     def test_sandbox_violation_raised_hiding_setuptools(self, tmpdir):
@@ -115,7 +114,7 @@ class TestExceptionSaver:
 
         def write_file():
             "Trigger a SandboxViolation by writing outside the sandbox"
-            with open('/etc/foo', 'w'):
+            with open('/etc/foo', 'w', encoding="utf-8"):
                 pass
 
         with pytest.raises(setuptools.sandbox.SandboxViolation) as caught:
@@ -127,8 +126,9 @@ class TestExceptionSaver:
         cmd, args, kwargs = caught.value.args
         assert cmd == 'open'
         assert args == ('/etc/foo', 'w')
-        assert kwargs == {}
+        assert kwargs == {"encoding": "utf-8"}
 
         msg = str(caught.value)
         assert 'open' in msg
         assert "('/etc/foo', 'w')" in msg
+        assert "{'encoding': 'utf-8'}" in msg
